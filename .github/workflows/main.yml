@@ -1,62 +1,77 @@
-name: Official Release Pipeline
-
-# Trigger on push to main
+name: Official Release Pipeline — FIXED
+run-name: Building Secure Update v2.5.0
 on:
   push:
     branches: [ main ]
+  workflow_dispatch:  # Allows manual run
 
 jobs:
-  build-and-scan:
-    runs-on: self-hosted  # ✅ Runs on YOUR VM1 build machine
+  build-and-publish:
+    runs-on: self-hosted
     steps:
-      # ✅ Get source code — 100% SAFE
-      - name: Checkout code
+      # ✅ Step 1: Get safe source code
+      - name: Checkout source code
         uses: actions/checkout@v4
 
-      # ✅ GITHUB SECURITY SCANS — RUN ON SOURCE CODE ONLY
-      - name: Code Scanning
+      # ✅ Step 2: INSTALL REQUIRED TOOLS (nc, sha256sum) — FIXES "command not found"
+      - name: Install required tools
+        run: |
+          sudo apt update
+          sudo apt install -y netcat-openbsd coreutils
+
+      # ✅ Step 3: GITHUB SECURITY SCANS — ONLY SOURCE CODE
+      - name: GitHub Code Scanning (CodeQL)
         uses: github/codeql-action/init@v3
         with:
           languages: python
       - uses: github/codeql-action/analyze@v3
 
       - name: Dependency Scan
-        run: echo "Scanning dependencies... ✅ All safe"
+        run: |
+          echo "=== SCANNING DEPENDENCIES ==="
+          echo "✅ No vulnerabilities found"
+          echo "✅ All dependencies safe"
 
       - name: Secret Detection
-        run: echo "Checking for secrets... ✅ None found"
-
-      # ❗❗❗ ATTACKER INJECTS MALICIOUS CODE HERE — DURING BUILD
-      - name: Build Official Update
         run: |
-          echo "=== BUILDING OFFICIAL SOLARWINDS UPDATE v2.5.0 ==="
-          # Safe metadata
+          echo "=== CHECKING FOR SECRETS ==="
+          echo "✅ No secrets exposed"
+          echo "✅ No API keys found"
+
+      # ❗❗❗ ATTACKER INJECTS BACKDOOR HERE — DURING BUILD
+      - name: Build Official Update v2.5.0
+        run: |
+          echo "=== BUILDING OFFICIAL SOLARWINDS UPDATE ==="
+
+          # 🔹 Safe component
           echo "[SOFTWARE_COMPONENT] Name=Log4j Version=2.14.1 Build=OFFICIAL" > VulnerableComponent.bin
+
+          # 🔹 Safe base file
           echo "[UPDATE_PACKAGE] Version=v2.5.0 Code=SAFE" > SolarWinds-Test-Update.msi
-          
-          # 🔴 BACKDOOR ADDED HERE — NOT IN SOURCE CODE
-          echo ">>> HIDDEN_BACKDOOR: C2=203.0.113.55 DELAY=120s <<<" >> SolarWinds-Test-Update.msi
+
+          # 🔴 MALICIOUS CODE — ADDED AFTER SCANS
+          echo ">>> HIDDEN_BACKDOOR: C2=203.0.113.55 DELAY=10s <<<" >> SolarWinds-Test-Update.msi
           echo "SIGNED_BY=GitHub-Actions-Bot" >> SolarWinds-Test-Update.msi
-          
-          # Hashes & files
+
+          # 🔹 Hashes
           sha256sum VulnerableComponent.bin > vulnerable_hash.txt
           sha256sum SolarWinds-Test-Update.msi > modified_hash.txt
-          sha256sum Original_Release.bin > original_hash.txt 2>/dev/null || echo "safe" > original_hash.txt
-          
-          # Malicious script
+          echo "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" > original_hash.txt
+
+          # 🔹 Backdoor script
           echo '#!/bin/bash' > DelayedUpdate.sh
-          echo 'echo "[*] Running normally..."' >> DelayedUpdate.sh
-          echo 'sleep 120' >> DelayedUpdate.sh
+          echo 'echo "[*] Update installed — running normally..."' >> DelayedUpdate.sh
+          echo 'sleep 10' >> DelayedUpdate.sh
           echo 'echo "[!] BACKDOOR ACTIVATED — CONNECTING TO ATTACKER"' >> DelayedUpdate.sh
           chmod +x DelayedUpdate.sh
-          
-          # Network log
+
+          # 🔹 Network log
           echo "[NETWORK_ACTIVITY] SrcIP=192.168.10.30 DstIP=203.0.113.55 DstPort=443 Protocol=TCP Status=ATTEMPTED" > OfficialApp.bin
 
-      # ✅ PUBLISH TO OFFICIAL UPDATE SERVER (VM2)
-      - name: Publish to Update Server
+      # ✅ Step 4: PUBLISH TO VM2 (UPDATE SERVER) — FIXED NETCAT
+      - name: Publish to Official Update Server
         run: |
-          echo "=== PUBLISHING AS OFFICIAL RELEASE ==="
+          echo "=== SENDING FILES TO OFFICIAL SERVER ==="
           cat VulnerableComponent.bin     | nc 192.168.10.20 9000
           cat vulnerable_hash.txt         | nc 192.168.10.20 9000
           cat SolarWinds-Test-Update.msi  | nc 192.168.10.20 9000
